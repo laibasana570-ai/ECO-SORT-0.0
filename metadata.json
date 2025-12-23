@@ -1,0 +1,7 @@
+{
+  "name": "ECO SORT",
+  "description": "An intelligent waste triage web app that visually classifies waste into Recycle, Compost, Hazard, or Trash categories to assist with proper disposal.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

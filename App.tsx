@@ -25,34 +25,90 @@ const App: React.FC = () => {
   // Cleanup stream on unmount
   useEffect(() => {
     return () => {
-      stopCamera();
+      stopTracks();
     };
   }, []);
 
+  // Critical fix: Attach stream to video element when the camera view opens (mounts)
+  useEffect(() => {
+    if (isCameraOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      // Ensure video plays even if autoPlay fails
+      videoRef.current.play().catch(e => console.log("Play error:", e));
+    }
+  }, [isCameraOpen]);
+
+  const stopTracks = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+    setIsTorchOn(false);
+  };
+
   const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
-    // Stop existing stream first
-    stopCamera();
+    // Stop existing tracks but don't close the UI state yet (prevents flicker)
+    stopTracks();
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: mode,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        } 
-      });
+      let stream: MediaStream | null = null;
+      
+      // Attempt 1: Request specific facing mode with High Res
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: mode, // 'ideal' constraint
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          } 
+        });
+        setFacingMode(mode);
+      } catch (err) {
+        console.log(`High res camera init failed for ${mode}, trying fallback logic.`);
+      }
+
+      // Attempt 2: Request specific facing mode (No resolution constraints)
+      // This is crucial for mobile devices that might not support 1080p but have the correct camera
+      if (!stream) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: mode 
+            } 
+          });
+          setFacingMode(mode);
+        } catch (err) {
+           console.log(`Specific mode ${mode} failed, trying generic fallback.`);
+        }
+      }
+
+      // Attempt 3: Generic fallback (Any camera)
+      // Fixes issues on laptops/devices where 'environment' doesn't exist
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true 
+        });
+        // If we fell back, it's likely a webcam or default camera. 
+        // We set to 'user' to ensure mirroring is handled correctly for webcams.
+        setFacingMode('user'); 
+      }
       
       streamRef.current = stream;
+      
+      // If video element is already mounted (switching cameras), attach immediately
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(console.error);
       }
+
       setIsCameraOpen(true);
-      setFacingMode(mode);
       setState(prev => ({ ...prev, error: null }));
 
       // Check for torch capability
       const track = stream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      const capabilities = (track.getCapabilities && track.getCapabilities()) || {};
       // @ts-ignore - TypeScript doesn't always know about 'torch' in capabilities
       setHasTorch(!!capabilities.torch);
 
@@ -60,20 +116,16 @@ const App: React.FC = () => {
       console.error("Camera error:", err);
       setState(prev => ({ 
         ...prev, 
-        error: "Unable to access camera. Please ensure you have granted permissions." 
+        error: "Unable to access camera. Please ensure permissions are granted and a camera is available." 
       }));
+      // Close UI if we failed completely
+      setIsCameraOpen(false);
     }
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop();
-      });
-      streamRef.current = null;
-    }
+  const handleCloseCamera = () => {
+    stopTracks();
     setIsCameraOpen(false);
-    setIsTorchOn(false);
   };
 
   const toggleTorch = async () => {
@@ -107,16 +159,11 @@ const App: React.FC = () => {
       
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Flip horizontally if using front camera for mirror effect
-        if (facingMode === 'user') {
-           ctx.translate(canvas.width, 0);
-           ctx.scale(-1, 1);
-        }
-        
+        // Note: We do NOT mirror the capture context here.
         ctx.drawImage(video, 0, 0);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9); // High quality
         
-        stopCamera();
+        handleCloseCamera();
         processBase64(dataUrl);
       }
     }
@@ -161,7 +208,7 @@ const App: React.FC = () => {
   };
 
   const resetApp = () => {
-    stopCamera();
+    handleCloseCamera();
     setState({
       isLoading: false,
       result: null,
@@ -229,7 +276,9 @@ const App: React.FC = () => {
           <video 
             ref={videoRef} 
             autoPlay 
-            playsInline 
+            playsInline
+            muted 
+            onLoadedMetadata={() => videoRef.current?.play()}
             className={`absolute inset-0 w-full h-full object-cover opacity-90 transition-transform duration-500 ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
           />
           
@@ -277,7 +326,7 @@ const App: React.FC = () => {
           {/* Bottom Controls */}
           <div className="absolute bottom-10 left-0 right-0 flex items-center justify-center gap-12 z-10">
             <button 
-              onClick={stopCamera}
+              onClick={handleCloseCamera}
               className="p-4 rounded-full bg-white/10 backdrop-blur-md text-white hover:bg-white/20 transition-colors"
             >
               <Icons.X className="w-6 h-6" />

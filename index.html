@@ -11,6 +11,15 @@
         font-family: 'Inter', sans-serif;
       }
     </style>
+    <!-- Polyfill for process.env to work in local browser environments -->
+    <script>
+      window.process = {
+        env: {
+          NODE_ENV: 'development',
+          API_KEY: '' // Ensure this key is set in your build environment or console for local testing
+        }
+      };
+    </script>
   <script type="importmap">
 {
   "imports": {
@@ -19,7 +28,10 @@
     "react/": "https://esm.sh/react@^19.2.3/",
     "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "express": "https://esm.sh/express@^5.2.1",
+    "node-fetch": "https://esm.sh/node-fetch@^3.3.2",
+    "dotenv": "https://esm.sh/dotenv@^17.2.3"
   }
 }
 </script>

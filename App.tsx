@@ -49,6 +49,15 @@ const App: React.FC = () => {
   };
 
   const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
+    // Check for Secure Context (HTTPS or localhost)
+    if (!window.isSecureContext) {
+      setState(prev => ({ 
+        ...prev, 
+        error: "Security Restriction: Camera access requires HTTPS. If you are running a local server and accessing it from another device, please use a secure connection (HTTPS) or localhost." 
+      }));
+      return;
+    }
+
     // Stop existing tracks but don't close the UI state yet (prevents flicker)
     stopTracks();
 
